@@ -173,6 +173,7 @@ export class Feed {
   }
 
   private async attachApp(view: CastView): Promise<void> {
+    if (view.app !== undefined) return;
     view.app = await this.apps.appFor(view.fid, view.signer);
     this.appCounts.set(view.app, (this.appCounts.get(view.app) ?? 0) + 1);
   }
@@ -207,7 +208,7 @@ export class Feed {
       // Nodes reject messages dated >15 min ahead, but older rules let a few far-future casts
       // in (mainnet has one "from" 2061). Don't let them squat on the top of the feed.
       if (cast.timestamp > horizon) continue;
-      if (cast.app === undefined) cast.app = await this.apps.appFor(cast.fid, cast.signer);
+      if (cast.app === undefined) await this.attachApp(cast);
       if (passesFilter(cast, prefs)) out.push(cast);
       if (out.length >= limit) break;
     }
@@ -266,9 +267,10 @@ export class Feed {
       case "MESSAGE_TYPE_CAST_ADD": {
         const view = toCastView(message);
         if (!view) return;
+        // The live tail sees every cast on the network; its app is resolved only if it's
+        // actually displayed (see page()), so the signer cache stays proportional to use.
         this.live.unshift(view);
         if (this.live.length > MAX_LIVE_CASTS) this.live.length = MAX_LIVE_CASTS;
-        void this.attachApp(view);
         if (fid === this.me || this.following.has(fid)) this.addFollowingCast(message);
         return;
       }

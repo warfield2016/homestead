@@ -391,6 +391,8 @@ The client shows this as a receipt in the corner, for example *accepted by your 
 > [!WARNING] Accepted isn't included
 > A `200` from `submitMessage` means *validated and relayed*, not *in a block*. If gossip is lost, the message never lands and you have to submit it again. That's why Homestead watches for the message on the event stream instead of trusting the response. Read-node submissions that need an Ethereum L1 check (ENS names, smart-contract wallet verifications) are the most likely to be dropped under load.
 
+Don't use `/v1/validateMessage` to predict whether a write will land: it checks encoding, hash and signature only. On 2026-10-19 it answered `"valid": true` for a cast signed by a key that wasn't authorized for that FID.
+
 Follows (`LINK_ADD`), likes and recasts (`REACTION_ADD`), and their removals work the same way. Deleting a cast sends a `CAST_REMOVE`; the original becomes a tombstone that still counts against your storage until it's pushed out.
 
 ### Storage rent

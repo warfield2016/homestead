@@ -18,7 +18,7 @@ The client was run locally with `HOMESTEAD_DEMO=true` against a public mainnet S
 - Found and handled from real data: a mainnet cast dated 2061 (kept off the top of feeds), signer
   timestamps in Unix seconds, `requesterFids[]` query encoding, `/v1/events` rejecting shard 0.
 
-### Unit tests (`cd client && npm test`, 16 tests)
+### Unit tests (`cd client && npm test`)
 
 - **Offline `KEY_ADD` round trip:** `KeyManager.begin` → the browser's own `signWithPhrase`
   (a fresh random mnemonic) → `KeyManager.finish` → the submitted bytes decode to a `KEY_ADD`
@@ -30,6 +30,19 @@ The client was run locally with `HOMESTEAD_DEMO=true` against a public mainnet S
 - Event id math matches the docs' example (`151622205440` ↔ block `9254285`).
 - Onchain metadata decode (real mainnet bytes → 9152). App filter include/exclude logic.
 - `requesterFids[]` URL encoding.
+
+### Write encoding over HTTP
+
+A `CAST_ADD` built by the client code and POSTed to a mainnet node's `/v1/validateMessage` was
+decoded and passed hash/signature checks (random bytes get `400 Invalid protobuf data`). Note the
+node also said `valid: true` although the key wasn't authorized: that endpoint doesn't check
+authorization.
+
+### Unit tests: every write type
+
+`test/writer.test.ts` builds cast (mention + reply + embed), long cast, delete, like/unlike,
+recast, follow/unfollow and self-revoking `KEY_REMOVE` with the real `Writer`/`KeyManager` and
+validates each with `@farcaster/core`. Total: 22 tests.
 
 ### Production build and auth
 

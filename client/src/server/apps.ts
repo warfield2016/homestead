@@ -45,6 +45,7 @@ export function requestFidOf(signer: JsonSigner): number | null {
 
 const CACHE_FILE = "signer-apps.json";
 const UNKNOWN = 0;
+const MAX_ENTRIES = 50_000;
 
 export class AppResolver {
   // key: `${fid}:${signerHex}` -> requestFid (0 = unknown)
@@ -64,9 +65,15 @@ export class AppResolver {
     let promise = this.inflight.get(id);
     if (!promise) {
       promise = this.lookup(fid, signer).then((requestFid) => {
-        this.cache.set(id, requestFid);
-        this.dirty = true;
         this.inflight.delete(id);
+        // Cache only definite answers. "Unknown" can be transient (node restarting or still
+        // syncing), so it's asked again next time.
+        if (requestFid !== UNKNOWN) {
+          // Maps keep insertion order, so dropping the first key evicts the oldest entry.
+          if (this.cache.size >= MAX_ENTRIES) this.cache.delete(this.cache.keys().next().value!);
+          this.cache.set(id, requestFid);
+          this.dirty = true;
+        }
         return requestFid;
       });
       this.inflight.set(id, promise);

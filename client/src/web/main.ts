@@ -14,6 +14,17 @@ const KNOWN_APPS: Record<number, string> = {
   9152: "Farcaster",
 };
 
+/** Only http(s) links from the network become clickable; anything else (javascript:, data:) is dropped. */
+function safeUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function remember(map: Record<string, Profile> | undefined): void {
   for (const [fid, profile] of Object.entries(map ?? {})) profiles.set(Number(fid), profile);
 }
@@ -80,7 +91,9 @@ function avatar(fid: number, size = 40): HTMLElement {
   const letter = (p?.displayName || p?.username || "?").slice(0, 1).toUpperCase();
   const fallback = () => h("span", { class: "avatar fallback", style: `width:${size}px;height:${size}px` }, letter);
   if (!p?.pfp) return fallback();
-  const img = h("img", { class: "avatar", src: p.pfp, alt: "", width: size, height: size, loading: "lazy", referrerPolicy: "no-referrer" });
+  const src = safeUrl(p.pfp);
+  if (!src) return fallback();
+  const img = h("img", { class: "avatar", src, alt: "", width: size, height: size, loading: "lazy", referrerPolicy: "no-referrer" });
   img.addEventListener("error", () => img.replaceWith(fallback()), { once: true });
   return img;
 }
@@ -113,11 +126,12 @@ function embedsView(cast: Cast): HTMLElement | null {
     { class: "embeds" },
     cast.embeds.map((e) => {
       if (e.castId) return h("a", { class: "embed quote", href: `#/c/${e.castId.fid}/${e.castId.hash}` }, `↪ quoted cast by ${nameOf(e.castId.fid)}`);
-      if (!e.url) return null;
-      const link = () => h("a", { class: "embed link", href: e.url, target: "_blank", rel: "noopener noreferrer nofollow" }, e.url!.replace(/^https?:\/\//, ""));
-      if (/\.(png|jpe?g|gif|webp)(\?|$)|imagedelivery\.net/i.test(e.url)) {
-        const img = h("img", { class: "embed-img", src: e.url, alt: "", loading: "lazy", referrerPolicy: "no-referrer" });
-        const wrap = h("a", { href: e.url, target: "_blank", rel: "noopener noreferrer" }, img);
+      const url = safeUrl(e.url);
+      if (!url) return e.url ? h("span", { class: "embed link muted" }, e.url) : null;
+      const link = () => h("a", { class: "embed link", href: url, target: "_blank", rel: "noopener noreferrer nofollow" }, url.replace(/^https?:\/\//, ""));
+      if (/\.(png|jpe?g|gif|webp)(\?|$)|imagedelivery\.net/i.test(url)) {
+        const img = h("img", { class: "embed-img", src: url, alt: "", loading: "lazy", referrerPolicy: "no-referrer" });
+        const wrap = h("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, img);
         img.addEventListener("error", () => wrap.replaceWith(link()), { once: true });
         return wrap;
       }
@@ -379,7 +393,7 @@ async function profileView(fidOrMe: string): Promise<HTMLElement> {
         h("h1", null, p?.displayName || nameOf(fid)),
         h("p", { class: "muted" }, nameOf(fid), ` · FID ${fid}`),
         p?.bio && h("p", null, p.bio),
-        p?.url && h("a", { href: p.url, target: "_blank", rel: "noopener noreferrer" }, p.url),
+        safeUrl(p?.url) && h("a", { href: safeUrl(p?.url), target: "_blank", rel: "noopener noreferrer nofollow" }, p!.url!),
       ),
       canWrite && fid !== status?.account?.fid && followBtn,
     ),
