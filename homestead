@@ -1,0 +1,300 @@
+#!/usr/bin/env bash
+# Homestead: your own Farcaster read node and client, in three commands.
+#
+#   ./homestead provision   (0) rent a server with enough disk, or bring your own
+#   ./homestead node        (1) install a Snapchain read node on it
+#   ./homestead client      (2) build and start the Homestead client against that node
+#
+# Everything runs from your laptop over SSH. Needs only bash, curl, ssh and jq.
+# Read along: https://github.com/warfield2016/homestead (tutorial at the site in README.md)
+
+# shellcheck source=scripts/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/lib.sh"
+# shellcheck source=scripts/providers/hetzner.sh
+source "$HOMESTEAD_ROOT/scripts/providers/hetzner.sh"
+# shellcheck source=scripts/providers/digitalocean.sh
+source "$HOMESTEAD_ROOT/scripts/providers/digitalocean.sh"
+
+usage() {
+  cat <<EOF
+${BOLD}Homestead${RESET} — a Farcaster read node and client you run yourself.
+
+${BOLD}The three commands${RESET}
+  ./homestead provision [hetzner|digitalocean]   0. create a server (4 vCPU, 16 GB RAM, 2 TB disk)
+  ./homestead provision byo user@host            0. …or use a machine you already have
+  ./homestead node                               1. install and start a Snapchain read node
+  ./homestead client                             2. build and start the client, print its URL
+
+${BOLD}Day to day${RESET}
+  ./homestead status [--watch]   node sync progress (snapshot download, then catch-up)
+  ./homestead logs node|client   follow logs
+  ./homestead ssh                shell on the server
+  ./homestead tunnel             reach a --private client at http://localhost:8080
+  ./homestead destroy            delete the server and its volume (stops billing)
+  ./homestead doctor             check your setup
+
+${BOLD}Options (environment variables)${RESET}
+  HOMESTEAD_NETWORK=testnet      run against Farcaster's testnet (smaller, may be reset)
+  HOMESTEAD_LOCATION=nbg1        provider region (hetzner: fsn1 nbg1 hel1 ash hil; DO: fra1 nyc3 …)
+  HOMESTEAD_SERVER_TYPE=cax31    force a server type instead of the cheapest that fits
+  HOMESTEAD_DRY_RUN=1            print provider API writes instead of making them
+EOF
+}
+
+network() { local n; n="$(state_get NETWORK)"; printf '%s' "${n:-mainnet}"; }
+
+# --- 0. provision --------------------------------------------------------------------------
+
+cmd_provision() {
+  need curl jq ssh ssh-keygen
+  [[ -z "$(state_get HOST)" ]] || die "already provisioned: $(target). Run ./homestead destroy first, or delete .homestead/ to forget it."
+  local provider="${1:-hetzner}"
+  state_set NETWORK "${HOMESTEAD_NETWORK:-mainnet}"
+  case "$provider" in
+    hetzner) step "Command 0: provision a server on Hetzner Cloud"; hetzner_provision ;;
+    digitalocean | do) step "Command 0: provision a droplet on DigitalOcean"; digitalocean_provision ;;
+    byo) step "Command 0: use your own machine"; provision_byo "${2:-}" "${3:-}" ;;
+    *) die "unknown provider '$provider' (hetzner, digitalocean, byo)" ;;
+  esac
+  [[ -n "${HOMESTEAD_DRY_RUN:-}" ]] && { rm -f "$STATE_FILE"; ok "dry run complete; nothing was created"; return; }
+  [[ -n "${HOMESTEAD_TEST_NO_SSH:-}" ]] || check_specs
+  printf '\n%sDone.%s Next: %s./homestead node%s\n' "$GREEN" "$RESET" "$BOLD" "$RESET"
+}
+
+provision_byo() {
+  local where="$1" identity="$2"
+  [[ -n "$where" ]] || die "usage: ./homestead provision byo user@host [path/to/ssh_key]   (or: byo local)"
+  if [[ "$where" == "local" ]]; then
+    [[ "$(uname)" == "Linux" ]] || die "'byo local' needs a Linux machine (Snapchain runs in Docker on Linux)"
+    state_set HOST local
+    state_set SSH_USER "$(id -un)"
+  else
+    [[ "$where" == *@* ]] || where="root@$where"
+    state_set HOST "${where#*@}"
+    state_set SSH_USER "${where%@*}"
+    [[ -n "$identity" ]] && state_set SSH_IDENTITY "$identity"
+    if [[ -z "$identity" ]]; then
+      # Fall back to your normal SSH setup (agent, ~/.ssh/config) for machines you already use.
+      state_set SSH_IDENTITY ""
+    fi
+  fi
+  state_set PROVIDER byo
+  remote true || die "can't ssh to $(target). Make sure 'ssh $(target)' works without a password prompt."
+  ok "ssh $(target) works"
+  explain "Open these ports in your firewall/router: 3382/udp (gossip, required), 3381 + 3383/tcp"
+  explain "(node APIs, recommended), 80 + 443/tcp (client HTTPS, unless you use --private)."
+}
+
+check_specs() {
+  step "Checking the machine"
+  local cores mem_gb os
+  cores="$(remote nproc)"
+  mem_gb="$(remote "awk '/MemTotal/ { print int(\$2 / 1024 / 1024 + 0.5) }' /proc/meminfo")"
+  os="$(remote ". /etc/os-release && echo \"\$PRETTY_NAME\"")"
+  info "$cores CPUs, ${mem_gb} GB RAM, $os"
+  ((cores >= 4)) || warn "Snapchain recommends 4+ CPUs"
+  ((mem_gb >= 15)) || warn "Snapchain recommends 16 GB RAM"
+}
+
+# --- 1. node -------------------------------------------------------------------------------
+
+cmd_node() {
+  require_server
+  local net; net="$(network)"
+  step "Command 1: install a Snapchain read node ($net) on $(state_get HOST)"
+  explain "A read node keeps a full copy of Farcaster: it downloads a snapshot (~400 GB compressed),"
+  explain "then replays every block validators decided since. It never votes, so anyone can run one,"
+  explain "and it needs no API key from anybody. Writes you send it are checked and relayed to validators."
+
+  if [[ "$net" == "mainnet" ]]; then
+    printf '\n    Farcaster asks every operator to acknowledge this (same prompt as their installer):\n'
+    printf '    %s⚠️  You will NOT get any rewards for running this node.%s\n' "$BOLD" "$RESET"
+    printf '    Type "Yes" to continue: '
+    local yes; read -r yes </dev/tty || true
+    [[ "$(tr '[:upper:]' '[:lower:]' <<<"$yes")" =~ ^y(es)?$ ]] || die "cancelled"
+
+    local fid="${HOMESTEAD_OPERATOR_FID:-}"
+    if [[ -z "$fid" ]]; then
+      printf '    Your FID (only used to pick the weekday your node auto-upgrades; Enter to pick randomly): '
+      read -r fid </dev/tty || true
+    fi
+    [[ "$fid" =~ ^[0-9]+$ ]] || fid=$((RANDOM * 32 + RANDOM % 32 + 1))
+  fi
+
+  step "Installing on the server (Docker, data volume, Farcaster's snapchain.sh)"
+  remote_script "$HOMESTEAD_ROOT/scripts/remote/node-setup.sh" \
+    "NETWORK=$net" "DATA_DEVICE=$(state_get DATA_DEVICE)" "OPERATOR_FID=${fid:-0}" "AGREED=yes"
+  state_set NODE_INSTALLED "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  step "Node status"
+  sleep 10
+  cmd_status
+  cat <<EOF
+
+${GREEN}Your node is running.${RESET} It restores a snapshot and then catches up, which takes a few
+hours on mainnet. You can run command 2 now; the client waits for the node.
+
+  ./homestead status --watch     follow progress
+  ${BOLD}./homestead client${RESET}             next step
+EOF
+}
+
+cmd_status() {
+  require_server
+  local watch="${1:-}"
+  while :; do
+    local out
+    out="$(remote_script "$HOMESTEAD_ROOT/scripts/remote/status.sh" "NETWORK=$(network)" 2>&1 || true)"
+    if [[ "$watch" == "--watch" ]]; then
+      printf '\n%s%s%s\n' "$DIM" "$(date '+%H:%M:%S')" "$RESET"
+    fi
+    sed 's/^/    /' <<<"$out" | grep -v -E '^\s*(SYNCED|SYNCING)$' || true
+    if [[ "$out" == *SYNCED* && "$out" != *SYNCING* ]]; then ok "node is in sync"; return 0; fi
+    [[ "$watch" == "--watch" ]] || return 0
+    sleep 30
+  done
+}
+
+# --- 2. client -----------------------------------------------------------------------------
+
+cmd_client() {
+  require_server
+  local public=yes domain="" new_pass=""
+  while (($#)); do
+    case "$1" in
+      --private) public=no ;;
+      --domain) domain="$2"; shift ;;
+      --new-passphrase) new_pass=yes ;;
+      *) die "unknown option $1" ;;
+    esac
+    shift
+  done
+  local host="$domain"
+  if [[ -z "$host" && "$public" == yes ]]; then
+    is_local && die "'byo local' has no public IP to put in a hostname; use --domain your.domain or --private"
+    host="$(state_get HOST | tr '.' '-').sslip.io"
+  fi
+
+  step "Command 2: build and start the Homestead client"
+  explain "The client is a small Node server on your machine. It reads only from your node"
+  explain "(http://localhost:3381), keeps the app key it will sign with, and serves a web UI."
+  remote "docker --version >/dev/null" || die "Docker isn't on the server yet. Run ./homestead node first."
+
+  step "Copying the client source to /opt/homestead"
+  push_dir "$HOMESTEAD_ROOT/client" /opt/homestead/client
+  push_dir "$HOMESTEAD_ROOT/deploy" /opt/homestead/deploy
+  ok "copied"
+
+  step "Building and starting it"
+  remote_script "$HOMESTEAD_ROOT/scripts/remote/client-setup.sh" "HOMESTEAD_HOST=${host:-localhost}" "NETWORK=$(network)" "PUBLIC=$public"
+
+  local passphrase=""
+  if [[ -n "$new_pass" ]] || ! remote "cd /opt/homestead/deploy && docker compose exec -T client test -f /data/auth.json"; then
+    passphrase="$(random_passphrase)"
+    # Sent over stdin, so it never appears in a process list or shell history.
+    printf '%s' "$passphrase" | remote "cd /opt/homestead/deploy && docker compose exec -T client node dist/server.mjs set-password" >/dev/null
+  fi
+
+  local url
+  if [[ "$public" == yes ]]; then
+    url="https://$host"
+    step "Waiting for HTTPS ($host)"
+    explain "Caddy is fetching a Let's Encrypt certificate. sslip.io turns the IP in the name back into your IP."
+    local tries=0
+    until curl -sf --max-time 5 "$url/api/status" >/dev/null 2>&1; do
+      tries=$((tries + 1))
+      ((tries > 40)) && { warn "not reachable yet; check ./homestead logs client and that ports 80/443 are open"; break; }
+      sleep 3
+    done
+  else
+    url="http://localhost:8080 (after running ./homestead tunnel)"
+  fi
+  state_set CLIENT_URL "$url"
+
+  step "Node"
+  cmd_status || true
+
+  printf '\n%sYour client:%s   %s\n' "$GREEN$BOLD" "$RESET" "$url"
+  if [[ -n "$passphrase" ]]; then
+    printf '%sPassphrase:%s    %s   %s(shown once — save it in your password manager)%s\n' "$BOLD" "$RESET" "$passphrase" "$DIM" "$RESET"
+  else
+    printf '%sPassphrase:%s    unchanged (use --new-passphrase to rotate it)\n' "$BOLD" "$RESET"
+  fi
+  cat <<EOF
+
+Open it on your laptop or phone and log in. Then connect a ${BOLD}test${RESET} account: the client
+creates its own app key, and your recovery phrase (or wallet) signs two messages
+authorizing it. The phrase stays in your browser tab. Needs a synced node.
+EOF
+}
+
+# --- the rest ------------------------------------------------------------------------------
+
+cmd_logs() {
+  require_server
+  case "${1:-node}" in
+    node)
+      if [[ "$(network)" == "testnet" ]]; then remote_tty "cd /root/snapchain-testnet && docker compose -f docker-compose.testnet.yml logs --tail 100 -f snapchain"
+      else remote_tty "cd /root/snapchain && docker compose logs --tail 100 -f snapchain"; fi ;;
+    client) remote_tty "cd /opt/homestead/deploy && docker compose logs --tail 100 -f" ;;
+    *) die "logs node|client" ;;
+  esac
+}
+
+cmd_ssh() { require_server; is_local && die "this Homestead is local"; load_ssh_opts; exec ssh "${SSH_OPTS[@]}" "$(target)"; }
+
+cmd_tunnel() {
+  require_server
+  load_ssh_opts
+  printf 'Client at %shttp://localhost:8080%s, Grafana at http://localhost:3000. Ctrl-C to close.\n' "$BOLD" "$RESET"
+  exec ssh -N "${SSH_OPTS[@]}" -L 8080:127.0.0.1:8080 -L 3000:127.0.0.1:3000 "$(target)"
+}
+
+cmd_destroy() {
+  require_server
+  local provider; provider="$(state_get PROVIDER)"
+  if [[ "$provider" == byo ]]; then
+    confirm_word REMOVE "This stops Homestead and the node on $(state_get HOST) and deletes their data (your machine stays)."
+    remote "cd /opt/homestead/deploy 2>/dev/null && docker compose --profile public down -v; cd /root/snapchain 2>/dev/null && ./snapchain.sh down; true"
+    warn "the Snapchain database in /root/snapchain was left in place; delete it yourself if you want the disk back"
+  else
+    confirm_word DESTROY "This permanently deletes the server, its 2 TB volume (the node database) and the client's app key."
+    "${provider}_destroy"
+  fi
+  mv "$STATE_FILE" "$STATE_FILE.destroyed.$(date +%s)"
+  ok "forgot this server. Remember to revoke the client's app key if you didn't from the Keys page."
+}
+
+cmd_doctor() {
+  step "Local tools"
+  local cmd
+  for cmd in bash curl ssh ssh-keygen jq tar; do
+    if command -v "$cmd" >/dev/null; then ok "$cmd"; else warn "$cmd missing"; fi
+  done
+  step "State (.homestead/state)"
+  if [[ -f "$STATE_FILE" ]]; then grep -vE 'TOKEN' "$STATE_FILE" | sed 's/^/    /'; else info "no server yet"; fi
+  if [[ -n "$(state_get HOST)" ]]; then
+    step "Server"
+    if remote true; then ok "ssh $(target)"; check_specs; else warn "can't reach $(target)"; fi
+  fi
+}
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+  case "$cmd" in
+    provision | 0) cmd_provision "$@" ;;
+    node | 1) cmd_node "$@" ;;
+    client | 2) cmd_client "$@" ;;
+    status) cmd_status "$@" ;;
+    logs) cmd_logs "$@" ;;
+    ssh) cmd_ssh ;;
+    tunnel) cmd_tunnel ;;
+    destroy) cmd_destroy ;;
+    doctor) cmd_doctor ;;
+    help | -h | --help) usage ;;
+    *) usage; exit 1 ;;
+  esac
+}
+
+main "$@"

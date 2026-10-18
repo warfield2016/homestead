@@ -1,0 +1,40 @@
+# Homestead client + HTTPS. Lives next to (not inside) Farcaster's snapchain compose project,
+# so `snapchain.sh upgrade` can never overwrite it.
+name: homestead
+
+services:
+  client:
+    build: ../client
+    restart: unless-stopped
+    environment:
+      # Your node's HTTP API, published on the host by the snapchain container.
+      HUB_URL: http://host.docker.internal:3381
+      HOMESTEAD_NETWORK: ${HOMESTEAD_NETWORK:-mainnet}
+      SECURE_COOKIES: ${SECURE_COOKIES:-true}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - client-data:/data # app key, passphrase hash, preferences
+    ports:
+      - "127.0.0.1:8080:8080" # localhost only: reach it through Caddy or an ssh tunnel
+
+  # Automatic HTTPS. With no domain of your own, <your-ip>.sslip.io resolves to your server
+  # and Caddy gets a Let's Encrypt certificate for it. Skipped with `./homestead client --private`.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles: ["public"]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      HOMESTEAD_HOST: ${HOMESTEAD_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  client-data:
+  caddy-data:
+  caddy-config:

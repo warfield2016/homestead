@@ -1,0 +1,146 @@
+diff --git a/site/docs/pages/reference/httpapi/httpapi.md b/site/docs/pages/reference/httpapi/httpapi.md
+index 8cec1fc..5e89c70 100644
+--- a/site/docs/pages/reference/httpapi/httpapi.md
++++ b/site/docs/pages/reference/httpapi/httpapi.md
+@@ -30,7 +30,7 @@ try {
+     const response = await axios.get(`${server}/v1/castsByFid?fid=${fid}`);
+ 
+     console.log(`API Returned HTTP status ${response.status}`);
+-    console.log(`First Cast's text is ${response.messages[0].data.castAddBody.text}`);
++    console.log(`First Cast's text is ${response.data.messages[0].data.castAddBody.text}`);
+ } catch (e) {
+     // Handle errors
+     console.log(response);
+@@ -87,9 +87,9 @@ const server = "http://127.0.0.1:3381";
+ 
+ let nextPageToken = "";
+ do {
+-    const response = await axios.get(`${server}/v1/castsByFid?fid=${fid}&pageSize=100&nextPageToken=${nextPageToken}`);
++    const response = await axios.get(`${server}/v1/castsByFid?fid=${fid}&pageSize=100&pageToken=${encodeURIComponent(nextPageToken)}`);
+     // Process response....
+-    nextPageToken = response.nextPageToken;
++    nextPageToken = response.data.nextPageToken ?? "";
+ } while (nextPageToken !== "")
+ ```
+ 
+diff --git a/site/docs/pages/reference/httpapi/onchain.md b/site/docs/pages/reference/httpapi/onchain.md
+index 96eeb40..8137156 100644
+--- a/site/docs/pages/reference/httpapi/onchain.md
++++ b/site/docs/pages/reference/httpapi/onchain.md
+@@ -1,7 +1,116 @@
+ # On Chain API
+ 
++## signersByFid
++
++Get every active key (signer) for an FID: onchain keys added through the KeyRegistry, and gasless keys added with a `KEY_ADD` message. Also returns the nonces needed to build the next `KEY_ADD` or `KEY_REMOVE`.
++
++**Query Parameters**
++| Parameter     | Description                                                                                        | Example                   |
++| ------------- | -------------------------------------------------------------------------------------------------- | ------------------------- |
++| fid           | The FID being requested                                                                            | `fid=2112`                |
++| requesterFids | Optional. FIDs whose app nonce (used by self-revoking `KEY_REMOVE`) should be returned. Use `[]` once per FID; brackets must not be percent-encoded | `requesterFids[]=2112`    |
++| pageSize      | Optional page size (default: 1000)                                                                 | `pageSize=100`            |
++| pageToken     | Optional page token for pagination                                                                 | `pageToken=eyJvbmNo...`   |
++| reverse       | Optional reverse order flag                                                                        | `reverse=true`            |
++
++**Example**
++
++```bash
++curl 'http://127.0.0.1:3381/v1/signersByFid?fid=2112&requesterFids[]=2112'
++```
++
++**Response**
++
++```json
++{
++  "signers": [
++    {
++      "source": "SIGNER_SOURCE_OFFCHAIN",
++      "key": "0xf7a811a15952f9b9c4ed5ba18fde88f508434c483267ccdb21bfb7550f95878c",
++      "keyType": 1,
++      "fid": 2112,
++      "addedAt": 1792350494,
++      "lastUsedAt": 1792350494,
++      "ttl": 7776000,
++      "expiresAt": 1800126494,
++      "scopes": ["MESSAGE_TYPE_CAST_ADD", "MESSAGE_TYPE_CAST_REMOVE", "MESSAGE_TYPE_REACTION_ADD"],
++      "requestFid": 2112,
++      "nonce": 1792350494
++    },
++    {
++      "source": "SIGNER_SOURCE_ONCHAIN",
++      "key": "0x4e866695010caf0fda922e9d635b79c46421eb396c369eb0279f40665e246e35",
++      "keyType": 1,
++      "fid": 2112,
++      "onChainEvent": {
++        "type": "EVENT_TYPE_SIGNER",
++        "signerEventBody": {
++          "key": "0x4e866695010caf0fda922e9d635b79c46421eb396c369eb0279f40665e246e35",
++          "keyType": 1,
++          "eventType": "SIGNER_EVENT_TYPE_ADD",
++          "metadata": "AAAAAAAAAAAA...AAAAAAAA",
++          "metadataType": 1
++        }
++      }
++    }
++  ],
++  "nextPageToken": null,
++  "gaslessSignerCount": 1,
++  "gaslessSignerLimit": 1000,
++  "currentUserNonce": 1792350494,
++  "requesterFidNonces": { "2112": 0 }
++}
++```
++
++Notes:
++
++- `addedAt`, `lastUsedAt` and `expiresAt` are Unix timestamps in seconds, not Farcaster timestamps. `expiresAt` is `lastUsedAt + ttl` and moves forward every time the key signs a message.
++- Fields that don't apply to a key's source are omitted. Gasless keys carry `scopes`, `ttl`, `requestFid` and `nonce`; onchain keys carry `onChainEvent`, whose `metadata` is the ABI-encoded `SignedKeyRequestMetadata` (it contains the requesting app's FID).
++- The next `KEY_ADD` (or custody-signed `KEY_REMOVE`) must use a nonce greater than `currentUserNonce`. A self-revoking `KEY_REMOVE` must use a nonce greater than its `requestFid`'s entry in `requesterFidNonces`.
++- In this example the scopes list is shortened.
++
++## signer
++
++Get a single active key for an FID. Returns an error if the key isn't active for that FID.
++
++**Query Parameters**
++| Parameter | Description                  | Example                                                                     |
++| --------- | ---------------------------- | --------------------------------------------------------------------------- |
++| fid       | The FID being requested      | `fid=2112`                                                                  |
++| signer    | The public key of the signer | `signer=0xf7a811a15952f9b9c4ed5ba18fde88f508434c483267ccdb21bfb7550f95878c` |
++
++**Example**
++
++```bash
++curl 'http://127.0.0.1:3381/v1/signer?fid=2112&signer=0xf7a811a15952f9b9c4ed5ba18fde88f508434c483267ccdb21bfb7550f95878c'
++```
++
++**Response**
++
++```json
++{
++  "signer": {
++    "source": "SIGNER_SOURCE_OFFCHAIN",
++    "key": "0xf7a811a15952f9b9c4ed5ba18fde88f508434c483267ccdb21bfb7550f95878c",
++    "keyType": 1,
++    "fid": 2112,
++    "addedAt": 1792350494,
++    "lastUsedAt": 1792350494,
++    "ttl": 7776000,
++    "expiresAt": 1800126494,
++    "scopes": ["MESSAGE_TYPE_CAST_ADD", "MESSAGE_TYPE_CAST_REMOVE", "MESSAGE_TYPE_REACTION_ADD"],
++    "requestFid": 2112,
++    "nonce": 1792350494
++  }
++}
++```
++
+ ## onChainSignersByFid
+ 
++:::note
++Deprecated. Returns onchain keys only. Use [signersByFid](#signersbyfid), which also returns gasless keys.
++:::
++
+ Get a list of account keys (signers) provided by an FID
+ 
+ **Query Parameters**

@@ -1,0 +1,35 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  client:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: client } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: client/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+  scripts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -x -s bash -S warning homestead scripts/lib.sh scripts/providers/*.sh scripts/remote/*.sh
+      - name: command 0 against the mock Hetzner API
+        run: |
+          node scripts/test/mock-hetzner.mjs & sleep 1
+          HOMESTEAD_STATE_DIR=$RUNNER_TEMP/hs HCLOUD_API=http://127.0.0.1:8799/v1 HCLOUD_TOKEN=test-token \
+            HOMESTEAD_YES=PROVISION HOMESTEAD_TEST_NO_SSH=1 ./homestead provision hetzner
+          grep -q '^HOST=203.0.113.7$' $RUNNER_TEMP/hs/state
+          HOMESTEAD_STATE_DIR=$RUNNER_TEMP/hs HCLOUD_API=http://127.0.0.1:8799/v1 HCLOUD_TOKEN=test-token \
+            HOMESTEAD_YES=DESTROY ./homestead destroy
+  site:
+    runs-on: ubuntu-24.04
+    defaults: { run: { working-directory: site } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci && npm run build

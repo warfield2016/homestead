@@ -1,0 +1,47 @@
+diff --git a/docs/developers/guides/writing/casts.md b/docs/developers/guides/writing/casts.md
+index cba4e0f..967da6b 100644
+--- a/docs/developers/guides/writing/casts.md
++++ b/docs/developers/guides/writing/casts.md
+@@ -33,7 +33,7 @@ const castWithMentions = await makeCastAdd(
+ 
+ URLs can be embedded in the cast which instructs clients to render a preview.
+ 
+-A cast can have up to 2 embeds which can each be up to 256 bytes long. No other validation is performed on embeds.
++A cast can have up to 4 embeds (up to 2 before protocol version V20, activated on mainnet on 2026-08-13), which can each be up to 256 bytes long. No other validation is performed on embeds.
+ 
+ ```typescript
+ /**
+diff --git a/docs/learn/what-is-farcaster/messages.md b/docs/learn/what-is-farcaster/messages.md
+index 29ee611..d96e98b 100644
+--- a/docs/learn/what-is-farcaster/messages.md
++++ b/docs/learn/what-is-farcaster/messages.md
+@@ -22,19 +22,21 @@ Accounts can publish five different kinds of messages to the network:
+ 
+ An account must pay rent to keep their messages on the Farcaster network. Charging rent prevents users from spamming the network.
+ 
+-An account can rent a unit of storage by making an onchain transaction to the Storage Registry. A unit of storage costs $7 today, lasts for one year and lets each account store a certain number of messages of each type. The limits for each type today are:
++An account can rent a unit of storage by making an onchain transaction to the Storage Registry. A unit of storage is priced in USD (about $0.20 in October 2026; read `usdUnitPrice()` on the Storage Registry for the current price), lasts for one year and lets each account store a certain number of messages of each type. How many depends on when the unit was rented:
+ 
+-- 5000 Casts
+-- 2500 Reactions
+-- 2500 Links
+-- 50 Profile Data
+-- 50 Verifications
++| Unit type | Rented | Casts | Reactions | Links | Profile Data | Verifications |
++| --------- | ------ | ----- | --------- | ----- | ------------ | ------------- |
++| 2025 | since Jul 16, 2025 | 100 | 200 | 200 | 25 | 5 |
++| 2024 | Aug 24, 2024 – Jul 16, 2025 | 2000 | 1000 | 1000 | 50 | 25 |
++| Legacy | before Aug 24, 2024 | 5000 | 2500 | 2500 | 50 | 25 |
+ 
+-If an account exceeds its limit for a message type, the oldest message is pruned to make space for the new one. The user can keep using the network without paying for more storage and Hubs can keep the storage load under control. An account can always purchase more storage to increase its limits.
++Units rented before the 2025 redenomination were also given longer lifetimes. A node reports an account's exact units and limits at `/v1/storageLimitsByFid`.
++
++If an account exceeds its limit for a message type, the oldest message is pruned to make space for the new one. The user can keep using the network without paying for more storage and nodes can keep the storage load under control. An account can always purchase more storage to increase its limits.
+ 
+ An account that lets its storage expire may lose all its messages. There is a 30-day grace period after a storage unit expires during which an account must renew or lose its messages.
+ 
+-The price and size of each storage unit is re-calculated periodically to balance growth and quality of the network. See [FIP-6](https://github.com/farcasterxyz/protocol/discussions/98)
++The price and size of each storage unit is re-calculated periodically to balance growth and quality of the network. See [FIP-6](https://github.com/farcasterxyz/protocol/discussions/98), [extended storage](https://github.com/farcasterxyz/protocol/discussions/191) and [storage redenomination](https://github.com/farcasterxyz/protocol/discussions/229)
+ for more details.
+ 
+ ## Deletion

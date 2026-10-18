@@ -1,0 +1,9 @@
+node_modules/
+dist/
+data/
+.homestead/
+*.log
+.DS_Store
+site/dist/
+data-*/
+.claude/

@@ -1,0 +1,5 @@
+{$HOMESTEAD_HOST} {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy client:8080
+}

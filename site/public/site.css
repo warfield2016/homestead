@@ -1,0 +1,111 @@
+:root {
+  --bg: #f7f5ef;
+  --surface: #ffffff;
+  --text: #1d1f1c;
+  --muted: #5f645c;
+  --line: #e2ddd1;
+  --accent: #1f6f4a;
+  --accent-soft: #e3f0e8;
+  --code-bg: #f1eee6;
+  --warn: #8a5300;
+  --warn-soft: #fff4dc;
+  --concept: #33508a;
+  --concept-soft: #e8eefb;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 17px;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111311;
+    --surface: #181b18;
+    --text: #e6e4dd;
+    --muted: #a0a49b;
+    --line: #2b2f2b;
+    --accent: #6fcf98;
+    --accent-soft: #1a3022;
+    --code-bg: #1f231f;
+    --warn: #f1bd61;
+    --warn-soft: #2c2416;
+    --concept: #9db6f0;
+    --concept-soft: #1b2235;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); overflow-x: hidden; }
+a { color: var(--accent); text-underline-offset: 2px; }
+code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 4px; overflow-wrap: anywhere; }
+pre code { background: none; padding: 0; overflow-wrap: normal; }
+
+.top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.6rem 1rem; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; color: var(--text); text-decoration: none; }
+.top-links { display: flex; align-items: center; gap: 1rem; font-size: 0.95rem; }
+.top-links a { text-decoration: none; white-space: nowrap; }
+.menu { display: none; font: inherit; font-size: 0.9rem; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 0.3rem 0.8rem; }
+
+.layout { display: grid; grid-template-columns: 260px minmax(0, 760px); gap: 3rem; justify-content: center; padding: 0 1rem; }
+.toc { position: sticky; top: 3.6rem; align-self: start; max-height: calc(100vh - 4rem); overflow: auto; padding: 1.5rem 0; font-size: 0.88rem; }
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0.15rem 0; }
+.toc li.d3 { padding-left: 0.9rem; font-size: 0.84rem; }
+.toc a { color: var(--muted); text-decoration: none; display: block; padding: 0.15rem 0.5rem; border-radius: 6px; border-left: 2px solid transparent; }
+.toc a:hover { color: var(--text); }
+.toc a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-soft); }
+
+.content { padding: 2rem 0 4rem; min-width: 0; }
+.content h1 { font-size: 2.3rem; line-height: 1.15; margin: 0.5rem 0 1rem; letter-spacing: -0.02em; }
+.content h2 { font-size: 1.6rem; margin: 3.5rem 0 0.75rem; padding-top: 1rem; border-top: 1px solid var(--line); letter-spacing: -0.01em; }
+.content h3 { font-size: 1.2rem; margin: 2.2rem 0 0.5rem; }
+.content h4 { font-size: 1rem; margin: 1.5rem 0 0.4rem; }
+.content h2, .content h3, .content h4 { scroll-margin-top: 4rem; position: relative; }
+.anchor { position: absolute; left: -1.1em; color: var(--line); text-decoration: none; font-weight: 400; opacity: 0; }
+h2:hover .anchor, h3:hover .anchor, h4:hover .anchor { opacity: 1; }
+.lede { font-size: 1.2rem; color: var(--muted); margin-top: 0; }
+.content img { max-width: 100%; }
+.content li { margin: 0.25rem 0; }
+.content hr { border: none; border-top: 1px solid var(--line); margin: 2.5rem 0; }
+
+.code { position: relative; margin: 1rem 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; }
+.code pre { margin: 0; padding: 0.9rem 1rem; overflow-x: auto; font-size: 0.86rem; line-height: 1.55; }
+.code .lang { position: absolute; top: 0.35rem; right: 0.6rem; font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; pointer-events: none; }
+.code .copy { position: absolute; top: 0.4rem; right: 0.5rem; font: inherit; font-size: 0.75rem; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 6px; padding: 0.15rem 0.55rem; cursor: pointer; }
+.code.has-copy .lang { display: none; }
+.code.copyable pre { padding-right: 4.5rem; }
+
+.callout { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--surface); border-radius: 10px; padding: 0.4rem 1rem; margin: 1.25rem 0; }
+.callout > :last-child { margin-bottom: 0.6rem; }
+.callout-title { font-weight: 700; margin: 0.4rem 0 0.2rem; }
+.callout.warning { border-left-color: var(--warn); background: var(--warn-soft); }
+.callout.concept { border-left-color: var(--concept); background: var(--concept-soft); }
+.callout.concept .callout-title::before { content: "◆ "; color: var(--concept); }
+.callout.why .callout-title::before { content: "? "; color: var(--accent); }
+
+.table-wrap { overflow-x: auto; margin: 1rem 0; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--code-bg); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+
+.steps { counter-reset: step; list-style: none; padding: 0; }
+details { border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem 1rem; margin: 1rem 0; background: var(--surface); }
+details summary { cursor: pointer; font-weight: 600; }
+.quick h2 { border-top: none; margin-top: 0.75rem; padding-top: 0; }
+.quick { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 0.5rem 1.25rem 1rem; margin: 1.5rem 0; box-shadow: 0 1px 0 var(--line); }
+.foot { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 2rem 1rem 3rem; border-top: 1px solid var(--line); }
+
+@media (max-width: 900px) {
+  .layout { display: block; padding: 0 16px; }
+  .menu { display: inline-block; }
+  .toc { display: none; position: fixed; inset: 3.2rem 0 0 0; max-height: none; background: var(--bg); z-index: 9; padding: 1rem 16px 2rem; font-size: 1rem; }
+  .toc.open { display: block; }
+  .content { padding-top: 1rem; }
+  .content h1 { font-size: 1.85rem; }
+  .content h2 { font-size: 1.35rem; }
+  .anchor { display: none; }
+  .top-links { gap: 0.75rem; }
+  .quick { padding: 0.25rem 0.85rem 0.75rem; border-radius: 12px; }
+  .callout { padding: 0.35rem 0.85rem; }
+}
