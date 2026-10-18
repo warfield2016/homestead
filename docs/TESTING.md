@@ -15,6 +15,8 @@ The client was run locally with `HOMESTEAD_DEMO=true` against a public mainnet S
   and onchain (ABI-decoded `SignedKeyRequestMetadata`, e.g. FID 3's key → requestFid 9152).
 - Live tab: casts arriving from `/v1/events` tails on shards 1 and 2, starting at `maxHeight << 14`.
 - Thread view (ancestors, replies, reaction counts), raw message inspector, node status page.
+- App filters on the following feed: excluding Warpcast (FID 9152) left 30 casts, none via
+  Warpcast; "only show" Warpcast returned 30 casts, all via Warpcast.
 - Found and handled from real data: a mainnet cast dated 2061 (kept off the top of feeds), signer
   timestamps in Unix seconds, `requesterFids[]` query encoding, `/v1/events` rejecting shard 0.
 

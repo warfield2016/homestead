@@ -437,8 +437,12 @@ async function filtersView(): Promise<HTMLElement> {
   );
   const replies = h("input", { type: "checkbox", checked: prefs.showReplies });
   const save = async () => {
-    await api.put("/api/prefs", { appFilter: { mode: mode.value, apps: [...selected] }, showReplies: replies.checked });
-    toast("Saved");
+    try {
+      await api.put("/api/prefs", { appFilter: { mode: mode.value, apps: [...selected] }, showReplies: replies.checked });
+      toast("Saved");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    }
   };
   mode.onchange = save;
   replies.onchange = save;

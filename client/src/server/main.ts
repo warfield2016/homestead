@@ -213,7 +213,7 @@ async function start(): Promise<void> {
       writeJson("prefs.json", prefs, 0o644);
       return prefs;
     },
-    { write: true },
+    // A local preference, not a network write, so it's allowed in read-only demo mode too.
   );
 
   route("GET /api/node", async () => {
